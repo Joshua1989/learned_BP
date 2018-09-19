@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from torch.optim import RMSprop
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import LambdaLR
 
 # Use the correct progress bar for Jupyter and command line
 try:
@@ -37,17 +37,17 @@ def cross_entropy(x, llr):
 
 
 def tanh_loss(x, llr, alpha=1):
-    return (1 - torch.tanh(alpha * (1 - 2 * x) * llr)).mean() / 2 / alpha
+    return (1 - (alpha * (1 - 2 * x) * llr).tanh()).mean() / 2 / alpha
 
 
 def bit_error_rate(x, x_hat):
     # x, x_hat are of size N-by-batch_size
-    return abs(x - x_hat).mean()
+    return (x - x_hat).abs().mean()
 
 
 def word_error_rate(x, x_hat):
     # x, x_hat are of size N-by-batch_size
-    return (abs(x - x_hat).mean(dim=0) > 0).float().mean()
+    return ((x - x_hat).abs().mean(dim=0) > 0).float().mean()
 
 
 def multi_loss_CE(x, outputs, discount=1):
@@ -105,7 +105,7 @@ class TrainHandler:
         # use Adam optimizer with given initial learning rate and l2 regularization
         self.optimizer = RMSprop(model.parameters(), lr=opt.lr_init, weight_decay=opt.l2_lambda)
         # learning rate will half when there is no progress for three epochs
-        self.scheduler = ReduceLROnPlateau(self.optimizer, factor=0.5, patience=3, min_lr=opt.lr_floor)
+        self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda ep: 0.5 ** (ep // 5))
 
     def init_summary_writer(self):
         opt = self.opt
@@ -126,8 +126,8 @@ class TrainHandler:
         return pprint.pformat(self.opt.__dict__) + '\n' + \
             pprint.pformat({k: v.opt.__dict__ for k, v in self.model.named_modules()})
 
-    def load_ckpt(self):
-        save_dir = os.path.join(self.opt.checkpoint_dir, self.name())
+    def load_ckpt(self, save_dir=None):
+        save_dir = save_dir or os.path.join(self.opt.checkpoint_dir, self.name())
         s = save_dir.replace('[', '@1').replace(']', '@2')
         s = s.replace('@1', '[[]').replace('@2', '[]]')
         ckpt_files = sorted(glob.glob(s + '/epoch=*.pth'))
@@ -181,35 +181,39 @@ class TrainHandler:
             self.cum_BER, self.cum_WER = self.cum_BER + BER, self.cum_WER + WER
             return {}
         else:
-            for var, tensor in dict(self.model.named_parameters()).items():
-                if 'Wi' in var or 'We' in var:
-                    self.writer.add_scalar(f'weights/{var}', tensor.mean(), mb_count)
-                elif 'beta' in var or 'gamma' in var:
-                    self.writer.add_scalar(
-                        f"parameter/{var.replace('_logit', '')}",
-                        torch.sigmoid(tensor), mb_count
-                    )
-            lr = [group['lr'] for group in self.optimizer.param_groups][0]
-            self.writer.add_scalar('progress/learning_rate', lr, mb_count)
+            try:
+                for var, tensor in dict(self.model.named_parameters()).items():
+                    if 'Wi' in var or 'We' in var:
+                        self.writer.add_scalar(f'weights/{var}', tensor.mean(), mb_count)
+                    elif 'beta' in var or 'gamma' in var:
+                        self.writer.add_scalar(
+                            f"parameter/{var.replace('_logit', '')}",
+                            torch.sigmoid(tensor), mb_count
+                        )
+                lr = [group['lr'] for group in self.optimizer.param_groups][0]
+                self.writer.add_scalar('progress/learning_rate', lr, mb_count)
 
-            k = self.opt.report_every
-            ret = {
-                'loss': float(self.cum_cost / k),
-                'BER': float(self.cum_BER[max(self.cum_BER)] / k),
-                'WER': float(self.cum_WER[max(self.cum_WER)] / k)
-            }
-            self.writer.add_scalar('progress/loss', ret['loss'], mb_count)
-            self.writer.add_scalar('progress/BER', ret['BER'], mb_count)
-            self.writer.add_scalar('progress/WER', ret['WER'], mb_count)
+                k = self.opt.report_every
+                ret = {
+                    'loss': float(self.cum_cost / k),
+                    'BER': float(self.cum_BER[max(self.cum_BER)] / k),
+                    'WER': float(self.cum_WER[max(self.cum_WER)] / k)
+                }
+                self.writer.add_scalar('progress/loss', ret['loss'], mb_count)
+                self.writer.add_scalar('progress/BER', ret['BER'], mb_count)
+                self.writer.add_scalar('progress/WER', ret['WER'], mb_count)
 
-            for var, metric in self.cum_BER.items():
-                self.writer.add_scalar(f'BER/{var}', np.log10(metric / k), mb_count)
-            for var, metric in self.cum_WER.items():
-                self.writer.add_scalar(f'WER/{var}', np.log10(metric / k), mb_count)
+                # for var, metric in self.cum_BER.items():
+                #     self.writer.add_scalar(f'BER/{var}', np.log10(metric / k), mb_count)
+                # for var, metric in self.cum_WER.items():
+                #     self.writer.add_scalar(f'WER/{var}', np.log10(metric / k), mb_count)
 
-            # reset cumulate metrics
-            self.cum_cost, self.cum_BER, self.cum_WER = 0, Counter(), Counter()
-            return ret
+                # reset cumulate metrics
+                self.cum_cost, self.cum_BER, self.cum_WER = 0, Counter(), Counter()
+                return ret
+            except Exception:
+                print(x_hats, BER, WER)
+                return {}
 
     def write_plot(self):
         plt.switch_backend('agg')
@@ -294,9 +298,11 @@ class TrainHandler:
                                 inner_pbar.set_postfix(**ret)
                             inner_pbar.update(1)
                     # save recent epoch
-                    self.scheduler.step(self.epoch_cost)
+                    self.scheduler.step()
                     self.save_ckpt()
                     self.write_plot()
+                else:
+                    self.scheduler.step()
                 outer_pbar.update(1)
         print(f'finished training for {max_epoch} epochs')
 
@@ -385,7 +391,7 @@ class TrainHandler:
                 with tqdm(total=min_mb_num, leave=False) as pbar:
                     for i in range(min_mb_num):
                         # update log on every 100 mini-batch
-                        if i % 100 == 0 or param_result['word_error'][-1] >= min_word_error:
+                        if i % 1 == 0 or param_result['word_error'][-1] >= min_word_error:
                             with open(test_result_file, 'wb') as f:
                                 pickle.dump(full_result, f)
                             pbar.set_postfix(
