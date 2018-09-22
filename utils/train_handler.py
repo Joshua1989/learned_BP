@@ -138,8 +138,9 @@ class TrainHandler:
                 if k in model_dict:
                     model_dict[k] = v
             self.model.load_state_dict(model_dict)
-            # self.scheduler.last_epoch = int(re.search('epoch=(\d+)', ckpt_file).group(1))
-        self.scheduler.last_epoch = 0
+            self.scheduler.last_epoch = int(re.search('epoch=(\d+)', ckpt_file).group(1))
+        else:
+            self.scheduler.last_epoch = 0
 
     def save_ckpt(self, temp=False):
         save_dir = os.path.join(self.opt.checkpoint_dir, self.name())
