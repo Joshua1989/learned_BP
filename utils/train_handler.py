@@ -64,7 +64,7 @@ def multi_loss_CE(x, outputs, discount=1):
 
 
 def single_loss_CE(x, outputs):
-    return multi_loss(x, outputs, discount=0)
+    return multi_loss_CE(x, outputs, discount=0)
 
 
 def multi_loss_tanh(x, outputs, alpha=1, discount=1):
@@ -78,6 +78,19 @@ def multi_loss_tanh(x, outputs, alpha=1, discount=1):
         if scale == 0:
             break
     return num / den
+
+
+def multi_loss_tanh_balanced(x, outputs, alpha=1, discount=1):
+    if isinstance(outputs[-1], list):
+        outputs = [v for o in outputs for v in o]
+    scale, num, den = 1, 0, 0
+    for v in reversed(outputs):
+        num += scale * torch.sigmoid((2 * x - 1) * v).mean(dim=0)
+        den += scale
+        scale *= discount
+        if scale == 0:
+            break
+    return 1 / (den / num).mean()
 
 
 def single_loss_tanh(x, outputs):
