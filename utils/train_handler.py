@@ -255,22 +255,25 @@ class TrainHandler:
         pw_fig = plt.figure()
         if hasattr(self.model, 'iter_1'):
             layer = self.model.iter_1
-        else:
+        elif hasattr(self.model, 'outer_iter_1'):
             layer = self.model.outer_iter_1.iter_1
-        if len(layer.pw_linear.opt.pw_init) > 0:
-            x = torch.linspace(-layer.opt.llr_clip, layer.opt.llr_clip, 101).reshape((1, -1))
-            if self.opt.use_cuda:
-                x = x.cuda()
-            y = layer.pw_linear(x)
-            plt.plot(x[0].cpu().detach().numpy(), y[0].cpu().detach().numpy())
-            points = layer.pw_linear.log_points.exp().cpu().detach().numpy().reshape(-1)
-            points = np.round(np.concatenate(([0], points)), 2)
-            slopes = layer.pw_linear.log_slopes.exp().cpu().detach().numpy().reshape(-1)
-            slopes = np.round(slopes, 2)
-            plt.title(f'points: {points}\nslopes: {slopes}')
-            plt.xlim((-layer.opt.llr_clip, layer.opt.llr_clip))
-            plt.ylim((-layer.opt.llr_clip, layer.opt.llr_clip))
-            self.writer.add_figure('piecewise linear', pw_fig, epoch)
+        try:
+            if len(layer.pw_linear.opt.pw_init) > 0:
+                x = torch.linspace(-layer.opt.llr_clip, layer.opt.llr_clip, 101).reshape((1, -1))
+                if self.opt.use_cuda:
+                    x = x.cuda()
+                y = layer.pw_linear(x)
+                plt.plot(x[0].cpu().detach().numpy(), y[0].cpu().detach().numpy())
+                points = layer.pw_linear.log_points.exp().cpu().detach().numpy().reshape(-1)
+                points = np.round(np.concatenate(([0], points)), 2)
+                slopes = layer.pw_linear.log_slopes.exp().cpu().detach().numpy().reshape(-1)
+                slopes = np.round(slopes, 2)
+                plt.title(f'points: {points}\nslopes: {slopes}')
+                plt.xlim((-layer.opt.llr_clip, layer.opt.llr_clip))
+                plt.ylim((-layer.opt.llr_clip, layer.opt.llr_clip))
+                self.writer.add_figure('piecewise linear', pw_fig, epoch)
+        except Exception:
+            pass
 
     def train(self, max_epoch):
         trainable_params = list(filter(lambda x: x.requires_grad, self.model.parameters()))
