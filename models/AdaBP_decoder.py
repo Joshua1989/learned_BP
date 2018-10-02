@@ -34,9 +34,9 @@ class AdaBP_Decoder_Opt:
 
 
 class AdaBP_Decoder(nn.Module):
-    def __init__(self, code, opt=AdaBP_Decoder_Opt()):
+    def __init__(self, code, **kwargs):
         super(AdaBP_Decoder, self).__init__()
-        self.code, self.H, self.opt = code, code.H, opt
+        self.code, self.H, self.opt = code, code.H, AdaBP_Decoder_Opt(**kwargs)
         self.adapter_nn = TwoLayerNet(code.N, code.N, 3)
 
         if opt.use_cuda:
