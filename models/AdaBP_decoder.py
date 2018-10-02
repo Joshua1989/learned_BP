@@ -39,7 +39,7 @@ class AdaBP_Decoder(nn.Module):
         self.code, self.H, self.opt = code, code.H, AdaBP_Decoder_Opt(**kwargs)
         self.adapter_nn = TwoLayerNet(code.N, code.N, 3)
 
-        if opt.use_cuda:
+        if self.opt.use_cuda:
             self.cuda()
 
     def V_Step(self, ell, lam_hat, Wi, We):
