@@ -42,6 +42,9 @@ class AdaBP_Decoder(nn.Module):
         if self.opt.use_cuda:
             self.cuda()
 
+    def  name(self):
+        return f'T={self.opt.T},adaBP'
+
     def V_Step(self, ell, lam_hat, Wi, We):
         '''
         Vertical step of BP, compute V2C message using C2V message
