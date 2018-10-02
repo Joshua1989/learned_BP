@@ -151,7 +151,9 @@ class TrainHandler:
                 if k in model_dict:
                     model_dict[k] = v
             self.model.load_state_dict(model_dict)
-            self.scheduler.last_epoch = int(re.search('epoch=(\d+)', ckpt_file).group(1))
+            start_epoch = int(re.search('epoch=(\d+)', ckpt_file).group(1))
+            while self.scheduler.last_epoch < start_epoch:
+                self.scheduler.last_epoch.step()
         else:
             self.scheduler.last_epoch = 0
 
