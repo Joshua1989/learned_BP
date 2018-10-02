@@ -42,8 +42,11 @@ class AdaBP_Decoder(nn.Module):
         if self.opt.use_cuda:
             self.cuda()
 
-    def  name(self):
+    def name(self):
         return f'T={self.opt.T},adaBP'
+
+    def iteration_number(self):
+        return self.opt.T
 
     def V_Step(self, ell, lam_hat, Wi, We):
         '''
@@ -93,11 +96,11 @@ class AdaBP_Decoder(nn.Module):
         Wi, We = 1.5 * Wi, 1.5 * We
         # Initialize BP messages
         shape = (self.code.H.E, chn_llr.shape[1])
-        msg_C2V, msg_V2C, outputs = torch.zeros(*shape), torch.zeros(*shape), {}
+        msg_C2V, msg_V2C, outputs = torch.zeros(*shape), torch.zeros(*shape), [None] * self.opt.T
         if self.opt.use_cuda:
             msg_C2V, msg_V2C = msg_C2V.cuda(), msg_V2C.cuda()
         # Run BP for T iterations
-        for t in range(1, self.opt.T + 1):
+        for t in range(self.opt.T):
             msg_V2C = damping(msg_V2C, self.V_Step(chn_llr, msg_C2V, Wi, We), gamma)
             msg_C2V = damping(msg_C2V, self.H_Step(msg_V2C), gamma)
             outputs[t] = self.M_Step(chn_llr, msg_C2V, Wi, We)

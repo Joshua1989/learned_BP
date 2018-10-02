@@ -317,8 +317,6 @@ class TrainHandler:
                     self.scheduler.step()
                     self.save_ckpt()
                     self.write_plot()
-                else:
-                    self.scheduler.step()
                 outer_pbar.update(1)
         print(f'finished training for {max_epoch} epochs')
 
