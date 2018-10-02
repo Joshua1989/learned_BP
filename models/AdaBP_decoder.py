@@ -30,6 +30,7 @@ class AdaBP_Decoder_Opt:
     def __init__(self, **kwargs):
         self.llr_clip = kwargs.get('llr_clip', 15.0)
         self.T = kwargs.get('T', 30)
+        self.est_SNR = kwargs.get('est_SNR', True)
         self.use_cuda = kwargs.get('use_cuda', True)
 
 
@@ -37,13 +38,16 @@ class AdaBP_Decoder(nn.Module):
     def __init__(self, code, **kwargs):
         super(AdaBP_Decoder, self).__init__()
         self.code, self.H, self.opt = code, code.H, AdaBP_Decoder_Opt(**kwargs)
-        self.adapter_nn = TwoLayerNet(code.N, code.N, 3)
+        if self.opt.est_SNR:
+            self.adapter_nn = TwoLayerNet(1, 20, 3)
+        else:
+            self.adapter_nn = TwoLayerNet(code.N, code.N, 3)
 
         if self.opt.use_cuda:
             self.cuda()
 
     def name(self):
-        return f'T={self.opt.T},adaBP'
+        return f'T={self.opt.T},est_SNR,adaBP' if self.opt.est_SNR else f'T={self.opt.T},adaBP'
 
     def iteration_number(self):
         return self.opt.T
@@ -57,6 +61,7 @@ class AdaBP_Decoder(nn.Module):
         Returns:
             torch.tensor -- C2V message (E x B)
         '''
+        ell, lam_hat = Wi * ell, We * lam_hat
         llr_int, llr_ext = self.H.col_gather(ell), self.H.col_sum_loo(lam_hat)
         return llr_int + llr_ext
 
@@ -88,11 +93,18 @@ class AdaBP_Decoder(nn.Module):
         Returns:
             torch.tensor -- marginal output (N x B)
         '''
+        ell, lam_hat = Wi * ell, We * lam_hat
         return ell + self.H.col_sum(lam_hat)
 
     def forward(self, chn_llr):
         # chn_llr N x B, use adapter NN to generate BP parameters
-        gamma, Wi, We = [tensor.reshape((1, -1)) for tensor in self.adapter_nn(chn_llr.t()).t()]
+        if self.opt.est_SNR:
+            E = (chn_llr ** 2).mean(dim=0)
+            snr_hat = 10 * ((E / (1 + (1 + E).sqrt())) / (4 * self.code.rate)).log10()
+            params = self.adapter_nn(snr_hat.reshape((-1, 1))).t()
+        else:
+            params = self.adapter_nn(chn_llr.t()).t()
+        gamma, Wi, We = [tensor.reshape((1, -1)) for tensor in params]
         Wi, We = 1.5 * Wi, 1.5 * We
         # Initialize BP messages
         shape = (self.code.H.E, chn_llr.shape[1])
