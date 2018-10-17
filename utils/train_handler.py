@@ -196,39 +196,30 @@ class TrainHandler:
             self.cum_BER, self.cum_WER = self.cum_BER + BER, self.cum_WER + WER
             return {}
         else:
-            try:
-                for var, tensor in dict(self.model.named_parameters()).items():
-                    if 'Wi' in var or 'We' in var:
-                        self.writer.add_scalar(f'weights/{var}', tensor.mean(), mb_count)
-                    elif 'beta' in var or 'gamma' in var:
-                        self.writer.add_scalar(
-                            f"parameter/{var.replace('_logit', '')}",
-                            torch.sigmoid(tensor), mb_count
-                        )
-                lr = [group['lr'] for group in self.optimizer.param_groups][0]
-                self.writer.add_scalar('progress/learning_rate', lr, mb_count)
+            for var, tensor in dict(self.model.named_parameters()).items():
+                if 'Wi' in var or 'We' in var:
+                    self.writer.add_scalar(f'weights/{var}', tensor.mean(), mb_count)
+                elif ('beta' in var or 'gamma' in var) and tensor.numel() == 1:
+                    self.writer.add_scalar(
+                        f"parameter/{var.replace('_logit', '')}",
+                        torch.sigmoid(tensor), mb_count
+                    )
+            lr = [group['lr'] for group in self.optimizer.param_groups][0]
+            self.writer.add_scalar('progress/learning_rate', lr, mb_count)
 
-                k = self.opt.report_every
-                ret = {
-                    'loss': float(self.cum_cost / k),
-                    'BER': float(self.cum_BER[max(self.cum_BER)] / k),
-                    'WER': float(self.cum_WER[max(self.cum_WER)] / k)
-                }
-                self.writer.add_scalar('progress/loss', ret['loss'], mb_count)
-                self.writer.add_scalar('progress/BER', ret['BER'], mb_count)
-                self.writer.add_scalar('progress/WER', ret['WER'], mb_count)
+            k = self.opt.report_every
+            ret = {
+                'loss': float(self.cum_cost / k),
+                'BER': float(self.cum_BER[max(self.cum_BER, default=0)] / k),
+                'WER': float(self.cum_WER[max(self.cum_WER, default=0)] / k)
+            }
+            self.writer.add_scalar('progress/loss', ret['loss'], mb_count)
+            self.writer.add_scalar('progress/BER', ret['BER'], mb_count)
+            self.writer.add_scalar('progress/WER', ret['WER'], mb_count)
 
-                # for var, metric in self.cum_BER.items():
-                #     self.writer.add_scalar(f'BER/{var}', np.log10(metric / k), mb_count)
-                # for var, metric in self.cum_WER.items():
-                #     self.writer.add_scalar(f'WER/{var}', np.log10(metric / k), mb_count)
-
-                # reset cumulate metrics
-                self.cum_cost, self.cum_BER, self.cum_WER = 0, Counter(), Counter()
-                return ret
-            except Exception:
-                print(x_hats, BER, WER)
-                return {}
+            # reset cumulate metrics
+            self.cum_cost, self.cum_BER, self.cum_WER = 0, Counter(), Counter()
+            return ret
 
     def write_plot(self):
         plt.switch_backend('agg')

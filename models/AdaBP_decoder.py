@@ -26,10 +26,25 @@ class TwoLayerNet(torch.nn.Module):
         return out
 
 
+class AdaptiveNet(torch.nn.Module):
+    def __init__(self, D_in, width):
+        super(AdaptiveNet, self).__init__()
+        self.gamma_nets = TwoLayerNet(D_in, width, 1)
+        self.Wi_nets = TwoLayerNet(D_in, width, 1)
+        self.We_nets = TwoLayerNet(D_in, width, 1)
+
+    def forward(self, x):
+        gamma = self.gamma_nets(x)
+        Wi = self.Wi_nets(x)
+        We = self.We_nets(x)
+        return torch.stack([gamma, Wi, We], dim=1).squeeze()
+
+
 class AdaBP_Decoder_Opt:
     def __init__(self, **kwargs):
         self.llr_clip = kwargs.get('llr_clip', 15.0)
         self.T = kwargs.get('T', 30)
+        self.max_weight = kwargs.get('max_weight', 1.0)
         self.est_SNR = kwargs.get('est_SNR', True)
         self.use_cuda = kwargs.get('use_cuda', True)
 
@@ -39,15 +54,16 @@ class AdaBP_Decoder(nn.Module):
         super(AdaBP_Decoder, self).__init__()
         self.code, self.H, self.opt = code, code.H, AdaBP_Decoder_Opt(**kwargs)
         if self.opt.est_SNR:
-            self.adapter_nn = TwoLayerNet(1, 20, 3)
+            self.adapter_nn = AdaptiveNet(1, 20)
         else:
-            self.adapter_nn = TwoLayerNet(code.N, code.N, 3)
+            self.adapter_nn = AdaptiveNet(code.N, code.N)
 
         if self.opt.use_cuda:
             self.cuda()
 
     def name(self):
-        return f'T={self.opt.T},est_SNR,adaBP' if self.opt.est_SNR else f'T={self.opt.T},adaBP'
+        opt = self.opt
+        return f'T={opt.T},mw={opt.max_weight},est_SNR,adaBP' if opt.est_SNR else f'T={opt.T},mw={opt.max_weight},adaBP'
 
     def iteration_number(self):
         return self.opt.T
@@ -105,7 +121,7 @@ class AdaBP_Decoder(nn.Module):
         else:
             params = self.adapter_nn(chn_llr.t()).t()
         gamma, Wi, We = [tensor.reshape((1, -1)) for tensor in params]
-        Wi, We = 1.5 * Wi, 1.5 * We
+        Wi, We = self.opt.max_weight * Wi, self.opt.max_weight * We
         # Initialize BP messages
         shape = (self.code.H.E, chn_llr.shape[1])
         msg_C2V, msg_V2C, outputs = torch.zeros(*shape), torch.zeros(*shape), [None] * self.opt.T
