@@ -282,7 +282,7 @@ class TrainHandler:
                     beta, gamma, Wi, We = [z.cpu().detach().numpy() for z in param_curve]
                     plt.plot(snr, beta, label='beta')
                 plt.plot(snr, gamma, label='gamma')
-                Wi, We = model.opt.max_weight * Wi, model.opt.max_weight * We
+                Wi, We = self.model.opt.max_weight * Wi, self.model.opt.max_weight * We
                 plt.plot(snr, Wi, label='Wi')
                 plt.plot(snr, We, label='We')
                 plt.legend()
