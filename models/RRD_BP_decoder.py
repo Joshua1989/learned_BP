@@ -50,10 +50,10 @@ class RRD_BP_Decoder(nn.Module):
     def iteration_number(self):
         return sum(getattr(self, f'outer_iter_{t}').iteration_number() for t in range(1, self.opt.T_rrd + 1))
 
-    def Outer_Iter(self, t, chn_llr, soft_rrdput):
+    def Outer_Iter(self, t, chn_llr, soft_output):
         # mix channel LLR and soft output of last outer iteration
         beta = torch.sigmoid(self.beta_logit)
-        soft_input = mixing(chn_llr, soft_rrdput, beta)
+        soft_input = mixing(chn_llr, soft_output, beta)
         # apply code automorphism permutation
         perm = self.code.random_automorphism()[0]
         soft_input = soft_input[perm]
@@ -65,9 +65,9 @@ class RRD_BP_Decoder(nn.Module):
         return outputs
 
     def forward(self, chn_llr):
-        soft_rrdput, outputs = chn_llr.clone(), []
+        soft_output, outputs = chn_llr.clone(), []
         for t in range(1, self.opt.T_rrd + 1):
-            output = self.Outer_Iter(t, chn_llr, soft_rrdput)
-            soft_rrdput = output[-1]
+            output = self.Outer_Iter(t, chn_llr, soft_output)
+            soft_output = output[-1]
             outputs.append(output)
         return outputs

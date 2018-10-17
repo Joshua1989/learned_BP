@@ -153,7 +153,7 @@ class TrainHandler:
             self.model.load_state_dict(model_dict)
             start_epoch = int(re.search('epoch=(\d+)', ckpt_file).group(1))
             while self.scheduler.last_epoch < start_epoch:
-                self.scheduler.last_epoch.step()
+                self.scheduler.step()
         else:
             self.scheduler.last_epoch = 0
 
@@ -276,6 +276,27 @@ class TrainHandler:
                 self.writer.add_figure('piecewise linear', pw_fig, epoch)
         except Exception:
             pass
+
+        if hasattr(self.model, 'adapter_nn'):
+            adapter_fig = plt.figure()
+            snr = torch.linspace(0, 8, 201).reshape((-1, 1))
+            if self.opt.use_cuda:
+                snr = snr.cuda()
+            param_curve = self.model.adapter_nn(snr).t()
+            if len(param_curve) in [3, 4]:
+                snr = snr.squeeze().cpu().detach().numpy()
+                if len(param_curve) == 3:
+                    gamma, Wi, We = [z.cpu().detach().numpy() for z in param_curve]
+                elif len(param_curve) == 4:
+                    beta, gamma, Wi, We = [z.cpu().detach().numpy() for z in param_curve]
+                    plt.plot(snr, beta, label='beta')
+
+                plt.plot(snr, gamma, label='gamma')
+                Wi, We = 1.5 * Wi, 1.5 * We
+                plt.plot(snr, Wi, label='Wi')
+                plt.plot(snr, We, label='We')
+                plt.legend()
+                self.writer.add_figure('parameter adapter', adapter_fig, epoch)
 
     def train(self, max_epoch):
         trainable_params = list(filter(lambda x: x.requires_grad, self.model.parameters()))
