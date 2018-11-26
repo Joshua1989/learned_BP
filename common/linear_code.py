@@ -47,6 +47,7 @@ class LinearCode:
 
     def generate_automorphism(self, perm_num=10000):
         self.automorphisms = np.arange(self.N, dtype=int).reshape((1, -1))
+        self.automorphisms_inv = np.arange(self.N, dtype=int).reshape((1, -1))
         print('Automorphism sampling not implemented for {0}, use trivial identity permutation'.format(self.name))
 
     def is_automorphism(self, perm):
@@ -93,7 +94,7 @@ class LinearCode:
         # Pick T random permutation automorphisms of the code
         # Return an T-by-N TF tensor, each row is a permutation
         choice = np.random.choice(self.automorphisms.shape[0], T)
-        return self.automorphisms[choice]
+        return self.automorphisms[choice], self.inv_automorphisms[choice]
 
 
 class RM_Code(LinearCode):
@@ -133,11 +134,13 @@ class RM_Code(LinearCode):
                     return A0
         m, col_index = int(np.log2(self.N)), de2vec(np.arange(self.N)).T
         self.automorphisms = np.zeros((perm_num, self.N), dtype=int)
+        self.inv_automorphisms = np.zeros((perm_num, self.N), dtype=int)
         for i in range(perm_num):
             # Randomly pick affine transformation of vector index of columns
             D, b = invertible_binary_matrix(m), np.random.randint(low=0, high=2, size=(m, 1))
             # Find the column permutation induced by the affine transformation
             self.automorphisms[i, :] = vec2de(np.mod(D @ col_index + b, 2).astype(int).T)
+            self.inv_automorphisms[i, :] = np.argsort(self.automorphisms[i, :])
 
     def generate_random_subsample(self, alpha):
         self.Hsub = {}
@@ -236,11 +239,13 @@ class BCH_Code(LinearCode):
     def generate_automorphism(self, perm_num=10000):
         m, col_index = int(np.log2(self.N + 1)), np.arange(self.N, dtype=int)
         self.automorphisms = np.zeros((perm_num, self.N), dtype=int)
+        self.inv_automorphisms = np.zeros((perm_num, self.N), dtype=int)
         for i in range(perm_num):
             # Randomly pick a and i for mapping z -> a * z^(2^i)
             a, j = np.random.randint(low=1, high=self.N), np.random.randint(m)
             # Find the column permutation induced by the affine transformation
             self.automorphisms[i, :] = np.mod(col_index * (2**j) + a, self.N)
+            self.inv_automorphisms[i, :] = np.argsort(self.automorphisms[i, :])
 
 
 class EGolay24_Code(LinearCode):
@@ -285,10 +290,12 @@ class EGolay24_Code(LinearCode):
         W = np.array([23, 17, 22, 15, 19, 8, 14, 12, 7, 20, 9, 1, 10, 21, 2, 3, 5, 6, 11, 18, 13, 16, 4, 0], dtype=int)
         SS = [S, V, T, W]
         self.automorphisms = np.zeros((perm_num, 24), dtype=int)
+        self.inv_automorphisms = np.zeros((perm_num, self.N), dtype=int)
         for k in range(perm_num):
             i, j = np.random.choice(4, size=2, replace=False)
             SS[i] = SS[i][SS[j]]
             self.automorphisms[k, :] = SS[i]
+            self.inv_automorphisms[k, :] = np.argsort(self.automorphisms[k, :])
 
 
 # class Product_Code:

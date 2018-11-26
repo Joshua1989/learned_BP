@@ -55,13 +55,12 @@ class RRD_BP_Decoder(nn.Module):
         beta = torch.sigmoid(self.beta_logit)
         soft_input = mixing(chn_llr, soft_output, beta)
         # apply code automorphism permutation
-        perm = self.code.random_automorphism()[0]
-        soft_input = soft_input[perm]
+        perm, inv_perm = self.code.random_automorphism()
+        soft_input = soft_input[perm[0]]
         # apply BP inner iteration
         outputs = getattr(self, f'outer_iter_{t}')(soft_input)
         # invert the permutation to get output
-        inv_perm = np.argsort(perm)
-        outputs = [v[inv_perm] for v in outputs]
+        outputs = [v[inv_perm[0]] for v in outputs]
         return outputs
 
     def forward(self, chn_llr):

@@ -120,9 +120,8 @@ class AdaRRD_Decoder(nn.Module):
             # mix channel LLR and soft output of last outer iteration
             soft_input = mixing(chn_llr, soft_output, beta)
             # apply code automorphism permutation
-            perm = self.code.random_automorphism()[0]
-            inv_perm = np.argsort(perm)
-            soft_input = soft_input[perm]
+            perm, inv_perm = self.code.random_automorphism()
+            soft_input = soft_input[perm[0]]
             # Initialize BP messages
             msg_C2V, msg_V2C = torch.zeros(*shape), torch.zeros(*shape)
             if self.opt.use_cuda:
@@ -131,6 +130,6 @@ class AdaRRD_Decoder(nn.Module):
             for t in range(self.opt.T):
                 msg_V2C = damping(msg_V2C, self.V_Step(soft_input, msg_C2V, Wi, We), gamma)
                 msg_C2V = damping(msg_C2V, self.H_Step(msg_V2C), gamma)
-                outputs[tau][t] = self.M_Step(soft_input, msg_C2V, Wi, We)[inv_perm]
+                outputs[tau][t] = self.M_Step(soft_input, msg_C2V, Wi, We)[inv_perm[0]]
             soft_output = outputs[tau][-1]
         return outputs
