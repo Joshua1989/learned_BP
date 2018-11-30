@@ -94,7 +94,7 @@ class AdaBP_Decoder(nn.Module):
         # sign of output
         sgn = (-1.0) ** self.H.row_sum_loo((lam < 0).float())
         # amplitude of output
-        abs_lam = abs_lam.abs().clamp(-np.log(np.tanh(self.opt.llr_clip / 2)), self.opt.llr_clip)
+        abs_lam = lam.abs().clamp(-np.log(np.tanh(self.opt.llr_clip / 2)), self.opt.llr_clip)
         amp = self.H.row_sum_loo(torch.log(torch.tanh(abs_lam / 2)))
         # print(abs_lam, sgn, amp)
         return sgn * 2 * atanh(amp.exp())
