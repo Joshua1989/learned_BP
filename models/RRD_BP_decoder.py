@@ -56,17 +56,17 @@ class RRD_BP_Decoder(nn.Module):
         soft_input = mixing(chn_llr, soft_output, beta)
         # apply code automorphism permutation
         perm, inv_perm = self.code.random_automorphism()
-        soft_input = soft_input[perm[0]]
+        soft_input = soft_input.index_select(0, perm[0])
         # apply BP inner iteration
         outputs = getattr(self, f'outer_iter_{t}')(soft_input)
         # invert the permutation to get output
-        outputs = [v[inv_perm[0]] for v in outputs]
+        outputs = [v.index_select(0, inv_perm[0]) for v in outputs]
         return outputs
 
     def forward(self, chn_llr):
-        soft_output, outputs = chn_llr.clone(), []
+        soft_output, outputs = chn_llr.clone(), [None] * self.opt.T_rrd
         for t in range(1, self.opt.T_rrd + 1):
             output = self.Outer_Iter(t, chn_llr, soft_output)
             soft_output = output[-1]
-            outputs.append(output)
+            outputs[t - 1] = output
         return outputs

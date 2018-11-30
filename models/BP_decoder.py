@@ -52,10 +52,10 @@ class BP_Decoder(nn.Module):
 
     def forward(self, chn_llr):
         shape = (self.code.H.E, chn_llr.shape[1])
-        msg_C2V, msg_V2C, outputs = torch.zeros(*shape), torch.zeros(*shape), []
+        msg_C2V, msg_V2C, outputs = torch.zeros(*shape), torch.zeros(*shape), [None] * self.opt.T
         if self.opt.use_cuda:
             msg_C2V, msg_V2C = msg_C2V.cuda(), msg_V2C.cuda()
         for t in range(1, self.opt.T + 1):
             msg_C2V, msg_V2C, output = self.BP_Iter(t, chn_llr, msg_C2V, msg_V2C)
-            outputs.append(output)
+            outputs[t - 1] = output
         return outputs

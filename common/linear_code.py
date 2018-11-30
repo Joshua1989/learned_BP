@@ -48,6 +48,11 @@ class LinearCode:
     def generate_automorphism(self, perm_num=10000):
         self.automorphisms = np.arange(self.N, dtype=int).reshape((1, -1))
         self.automorphisms_inv = np.arange(self.N, dtype=int).reshape((1, -1))
+        self.automorphisms = torch.tensor(self.automorphisms)
+        self.inv_automorphisms = torch.tensor(self.inv_automorphisms)
+        if self.use_cuda:
+            self.automorphisms = self.automorphisms.cuda()
+            self.inv_automorphisms = self.inv_automorphisms.cuda()
         print('Automorphism sampling not implemented for {0}, use trivial identity permutation'.format(self.name))
 
     def is_automorphism(self, perm):
@@ -141,6 +146,11 @@ class RM_Code(LinearCode):
             # Find the column permutation induced by the affine transformation
             self.automorphisms[i, :] = vec2de(np.mod(D @ col_index + b, 2).astype(int).T)
             self.inv_automorphisms[i, :] = np.argsort(self.automorphisms[i, :])
+        self.automorphisms = torch.tensor(self.automorphisms)
+        self.inv_automorphisms = torch.tensor(self.inv_automorphisms)
+        if self.use_cuda:
+            self.automorphisms = self.automorphisms.cuda()
+            self.inv_automorphisms = self.inv_automorphisms.cuda()
 
     def generate_random_subsample(self, alpha):
         self.Hsub = {}
@@ -246,6 +256,11 @@ class BCH_Code(LinearCode):
             # Find the column permutation induced by the affine transformation
             self.automorphisms[i, :] = np.mod(col_index * (2**j) + a, self.N)
             self.inv_automorphisms[i, :] = np.argsort(self.automorphisms[i, :])
+        self.automorphisms = torch.tensor(self.automorphisms)
+        self.inv_automorphisms = torch.tensor(self.inv_automorphisms)
+        if self.use_cuda:
+            self.automorphisms = self.automorphisms.cuda()
+            self.inv_automorphisms = self.inv_automorphisms.cuda()
 
 
 class EGolay24_Code(LinearCode):
@@ -296,6 +311,11 @@ class EGolay24_Code(LinearCode):
             SS[i] = SS[i][SS[j]]
             self.automorphisms[k, :] = SS[i]
             self.inv_automorphisms[k, :] = np.argsort(self.automorphisms[k, :])
+        self.automorphisms = torch.tensor(self.automorphisms)
+        self.inv_automorphisms = torch.tensor(self.inv_automorphisms)
+        if self.use_cuda:
+            self.automorphisms = self.automorphisms.cuda()
+            self.inv_automorphisms = self.inv_automorphisms.cuda()
 
 
 # class Product_Code:

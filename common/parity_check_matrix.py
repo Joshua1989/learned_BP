@@ -32,11 +32,11 @@ class ParityCheckMatrix:
     # Define functions for row/column gather, sparse row/column sum and sparse leave-one-out row/column sum
     def row_gather(self, msg):
         # length-M input, length-E output
-        return msg[self.I_row]
+        return msg.index_select(self.I_row)
 
     def col_gather(self, msg):
         # length-N input, length-E output
-        return msg[self.I_col]
+        return msg.index_select(self.I_col)
 
     def row_sum(self, msg):
         # length-E input, length-M output

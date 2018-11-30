@@ -84,11 +84,10 @@ class AdaRRD_Decoder(nn.Module):
         # sign of output
         sgn = (-1.0) ** self.H.row_sum_loo((lam < 0).float())
         # amplitude of output
-        abs_lam = torch.abs(lam)
-        abs_lam = abs_lam.clamp(-np.log(np.tanh(self.opt.llr_clip / 2)), self.opt.llr_clip)
+        abs_lam = abs_lam.abs().clamp(-np.log(np.tanh(self.opt.llr_clip / 2)), self.opt.llr_clip)
         amp = self.H.row_sum_loo(torch.log(torch.tanh(abs_lam / 2)))
         # print(abs_lam, sgn, amp)
-        return sgn * 2 * atanh(torch.exp(amp))
+        return sgn * 2 * atanh(amp.exp())
 
     def M_Step(self, ell, lam_hat, Wi, We):
         '''
@@ -121,7 +120,7 @@ class AdaRRD_Decoder(nn.Module):
             soft_input = mixing(chn_llr, soft_output, beta)
             # apply code automorphism permutation
             perm, inv_perm = self.code.random_automorphism()
-            soft_input = soft_input[perm[0]]
+            soft_input = soft_input.index_select(0, perm[0])
             # Initialize BP messages
             msg_C2V, msg_V2C = torch.zeros(*shape), torch.zeros(*shape)
             if self.opt.use_cuda:
@@ -130,6 +129,6 @@ class AdaRRD_Decoder(nn.Module):
             for t in range(self.opt.T):
                 msg_V2C = damping(msg_V2C, self.V_Step(soft_input, msg_C2V, Wi, We), gamma)
                 msg_C2V = damping(msg_C2V, self.H_Step(msg_V2C), gamma)
-                outputs[tau][t] = self.M_Step(soft_input, msg_C2V, Wi, We)[inv_perm[0]]
+                outputs[tau][t] = self.M_Step(soft_input, msg_C2V, Wi, We).index_select(0, inv_perm[0])
             soft_output = outputs[tau][-1]
         return outputs
