@@ -48,7 +48,7 @@ class LinearCode:
             x = (self.G.t() @ m) % 2
         else:
             x = torch.zeros((self.N, batch_size))
-        return
+        return x
 
     def generate_automorphism(self, perm_num=10000):
         self.automorphisms = np.arange(self.N, dtype=int).reshape((1, -1))
