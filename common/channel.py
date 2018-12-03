@@ -94,7 +94,7 @@ class AWGN_Channel(Channel):
             else:
                 param = torch.cuda.FloatTensor(1, batch_size).uniform_(param_range[0], param_range[1])
             sigma = 1 / torch.sqrt(2 * code.rate * 10**(param / 10))
-            e = torch.cuda.FloatTensor(code.N, batch_size).normal_(std=sigma)
+            e = sigma * torch.cuda.FloatTensor(code.N, batch_size).normal_()
         y = (-1)**x + e
         llr = 2 / sigma**2 * y
         return x, y, param, llr
