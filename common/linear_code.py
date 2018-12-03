@@ -19,6 +19,8 @@ class LinearCode:
         self.name, self.suffix = name, ''
         self.G_unknown = np.count_nonzero(G) == 0
         self.G = torch.tensor(G).float()
+        if self.use_cuda:
+            self.G = self.G.cuda()
         self.K, self.N = G.shape
         self.rate = self.K / self.N
         self.H = ParityCheckMatrix(H, use_cuda)
@@ -38,12 +40,15 @@ class LinearCode:
 
     def generate_codeword(self, batch_size, all_zero):
         if not self.G_unknown and not all_zero:
-            # If G is known and not transmit all-zero codewords
-            m = Binomial(total_count=1, probs=torch.ones((self.K, batch_size)) / 2).sample()
+            if not self.use_cuda:
+                # If G is known and not transmit all-zero codewords
+                m = Binomial(total_count=1, probs=torch.ones((self.K, batch_size)) / 2).sample()
+            else:
+                m = torch.cuda.FloatTensor(self.K, batch_size).bernoulli_(0.5)
             x = (self.G.t() @ m) % 2
         else:
             x = torch.zeros((self.N, batch_size))
-        return x
+        return
 
     def generate_automorphism(self, perm_num=10000):
         self.automorphisms = np.arange(self.N, dtype=int).reshape((1, -1))

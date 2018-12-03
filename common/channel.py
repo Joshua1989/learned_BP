@@ -39,12 +39,17 @@ class BSC_Channel(Channel):
             param_range = self.param_range
         # Generate transmitted codeword and channel parameter
         x = code.generate_codeword(batch_size, all_zero)
-        param = Uniform(
-            low=param_range[0] * torch.ones((1, batch_size)),
-            high=param_range[1] * torch.ones((1, batch_size))
-        ).sample()
-        # Generate noise and channel output, compute the channel LLR
-        e = Binomial(total_count=1, probs=param.repeat(code.N, 1)).sample()
+
+        if not code.use_cuda:
+            param = Uniform(
+                low=param_range[0] * torch.ones((1, batch_size)),
+                high=param_range[1] * torch.ones((1, batch_size))
+            ).sample()
+            # Generate noise and channel output, compute the channel LLR
+            e = Binomial(total_count=1, probs=param.repeat(code.N, 1)).sample()
+        else:
+            param = torch.cuda.FloatTensor(1, batch_size).uniform_(*param_range)
+            e = param.repeat(code.N, 1).bernoulli_()
         y = (x + e) % 2
         llr = (-1)**y * torch.log((1 - param) / param)
         return x, y, param, llr
@@ -67,19 +72,29 @@ class AWGN_Channel(Channel):
         # Generate transmitted codeword and channel parameter
         x = code.generate_codeword(batch_size, all_zero)
         # Generate noise and channel output, compute the channel LLR
-        if batch_size % 10 == 0:
-            h = np.linspace(param_range[0], param_range[1], 11)
-            param = Uniform(
-                low=torch.tensor(np.kron(h[1:], np.ones(batch_size // 10))),
-                high=torch.tensor(np.kron(h[1:], np.ones(batch_size // 10)))
-            ).sample().float()
+        if not code.use_cuda:
+            if batch_size % 10 == 0:
+                h = np.linspace(param_range[0], param_range[1], 11)
+                param = Uniform(
+                    low=torch.tensor(np.kron(h[1:], np.ones(batch_size // 10))),
+                    high=torch.tensor(np.kron(h[1:], np.ones(batch_size // 10)))
+                ).sample().float()
+            else:
+                param = Uniform(
+                    low=param_range[0] * torch.ones((1, batch_size)),
+                    high=param_range[1] * torch.ones((1, batch_size))
+                ).sample()
+            sigma = 1 / torch.sqrt(2 * code.rate * 10**(param / 10))
+            e = Normal(loc=0, scale=sigma.repeat(code.N, 1)).sample().float()
         else:
-            param = Uniform(
-                low=param_range[0] * torch.ones((1, batch_size)),
-                high=param_range[1] * torch.ones((1, batch_size))
-            ).sample()
-        sigma = 1 / torch.sqrt(2 * code.rate * 10**(param / 10))
-        e = Normal(loc=0, scale=sigma.repeat(code.N, 1)).sample().float()
+            if batch_size % 10 == 0:
+                h = np.repeat(np.linspace(param_range[0], param_range[1], 11), batch_size // 10)
+                param = torch.cuda.FloatTensor(h[batch_size // 10:])
+                # param.sub_(torch.cuda.FloatTensor(1, batch_size).uniform_(0, (param_range[1] - param_range[0]) / 10))
+            else:
+                param = torch.cuda.FloatTensor(1, batch_size).uniform_(param_range[0], param_range[1])
+            sigma = 1 / torch.sqrt(2 * code.rate * 10**(param / 10))
+            e = torch.cuda.FloatTensor(code.N, batch_size).normal_(std=sigma)
         y = (-1)**x + e
         llr = 2 / sigma**2 * y
         return x, y, param, llr
