@@ -233,6 +233,14 @@ class BCH_Code(LinearCode):
 
         base_url = 'https://www.uni-kl.de/fileadmin/chaco/public/alists_bch/'
         cycle_reduced_url = {
+            (255, 239): base_url + 'Hopt_BCH_255_239_2_1792ones.alist',
+            (255, 207): base_url + 'Hopt_BCH_255_207_6_3920ones.alist',
+            (255, 163): base_url + 'Hopt_BCH_255_163_12_6152ones.alist',
+            (127, 99): base_url + 'Hopt_BCH_127_99_4_1232ones.alist',
+            (127, 92): base_url + 'Hopt_BCH_127_92_5_1148ones.alist',
+            (127, 85): base_url + 'Hopt_BCH_127_85_6_1344ones.alist',
+            (127, 78): base_url + 'Hopt_BCH_127_78_7_1372ones.alist',
+            (127, 71): base_url + 'Hopt_BCH_127_71_9_1292ones.alist',
             (127, 64): base_url + 'Hopt_BCH_127_64_10_1424ones.alist',
             (63, 30): base_url + 'Hopt_BCH_63_30_6_396ones.alist',
             (63, 36): base_url + 'Hopt_BCH_63_36_5_384ones.alist',
