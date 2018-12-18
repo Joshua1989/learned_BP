@@ -48,6 +48,8 @@ class LinearCode:
             x = (self.G.t() @ m) % 2
         else:
             x = torch.zeros((self.N, batch_size))
+            if self.use_cuda:
+                x = x.cuda()
         return x
 
     def generate_automorphism(self, perm_num=10000):
