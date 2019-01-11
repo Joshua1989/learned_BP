@@ -13,7 +13,7 @@ from tensorboardX import SummaryWriter
 import torch
 import torch.nn.functional as F
 from torch.nn.utils.clip_grad import clip_grad_norm_
-from torch.optim import RMSprop
+from torch.optim import RMSprop, Adam
 from torch.optim.lr_scheduler import LambdaLR
 
 # Use the correct progress bar for Jupyter and command line
@@ -36,8 +36,9 @@ def cross_entropy(x, llr):
     return F.binary_cross_entropy_with_logits(-llr, x)
 
 
-def tanh_loss(x, llr, alpha=1):
-    return (1 - (alpha * (1 - 2 * x) * llr).tanh()).mean() / 2 / alpha
+def soft_BER(x, llr):
+    p1 = 1 - llr.sigmoid()
+    return ((1 - p1) ** x * p1 ** (1 - x)).mean()
 
 
 def bit_error_rate(x, x_hat):
@@ -50,12 +51,12 @@ def word_error_rate(x, x_hat):
     return ((x - x_hat).abs().mean(dim=0) > 0).float().mean()
 
 
-def multi_loss_CE(x, outputs, discount=1):
+def multi_loss(loss_func, x, outputs, discount=1):
     if isinstance(outputs[-1], list):
         outputs = [v for o in outputs for v in o]
     scale, num, den = 1, 0, 0
     for v in reversed(outputs):
-        num += scale * cross_entropy(x, v)
+        num += scale * loss_func(x, v)
         den += scale
         scale *= discount
         if scale == 0:
@@ -63,38 +64,8 @@ def multi_loss_CE(x, outputs, discount=1):
     return num / den
 
 
-def single_loss_CE(x, outputs):
-    return multi_loss_CE(x, outputs, discount=0)
-
-
-def multi_loss_tanh(x, outputs, alpha=1, discount=1):
-    if isinstance(outputs[-1], list):
-        outputs = [v for o in outputs for v in o]
-    scale, num, den = 1, 0, 0
-    for v in reversed(outputs):
-        num += scale * tanh_loss(x, v, alpha)
-        den += scale
-        scale *= discount
-        if scale == 0:
-            break
-    return num / den
-
-
-def multi_loss_tanh_balanced(x, outputs, alpha=1, discount=1):
-    if isinstance(outputs[-1], list):
-        outputs = [v for o in outputs for v in o]
-    scale, num, den = 1, 0, 0
-    for v in reversed(outputs):
-        num += scale * torch.sigmoid((2 * x - 1) * v).mean(dim=0)
-        den += scale
-        scale *= discount
-        if scale == 0:
-            break
-    return 1 / (den / num).mean()
-
-
-def single_loss_tanh(x, outputs):
-    return multi_loss_tanh(x, outputs, discount=0)
+def single_loss(loss_func, x, outputs):
+    return multi_loss(loss_func, x, outputs, discount=0)
 
 
 class TrainHandler_Opt:
@@ -106,19 +77,28 @@ class TrainHandler_Opt:
         self.use_cuda = kwargs.get('use_cuda', True)
 
         self.lr_init = kwargs.get('lr_init', 1e-3)
-        self.lr_floor = kwargs.get('lr_decay', 1.0)
-        self.l2_lambda = kwargs.get('l2_lambda', 0.0)
+        self.lr_lambda = eval(kwargs.get('lr_lambda', 'lambda ep: 1'))
+        self.weight_decay = kwargs.get('weight_decay', 0.0)
         self.grad_clip = kwargs.get('grad_clip', 0.1)
+
+        self.optimizer = kwargs.get('optimizer', 'RMSprop')
+
+        self.discount_init = kwargs.get('discount_init', 1.0)
+        self.discount_lambda = eval(kwargs.get('discount_lambda', 'lambda d_init, ep: d_init'))
+
+        self.name_suffix = kwargs.get('name_suffix', '')
 
 
 class TrainHandler:
-    def __init__(self, loader, model, loss=multi_loss_CE, **kwargs):
+    def __init__(self, loader, model, loss, **kwargs):
         opt = TrainHandler_Opt(**kwargs)
         self.loader, self.model, self.loss, self.opt = loader, model, loss, opt
         # use Adam optimizer with given initial learning rate and l2 regularization
-        self.optimizer = RMSprop(model.parameters(), lr=opt.lr_init, weight_decay=opt.l2_lambda)
-        # learning rate will half when there is no progress for three epochs
-        self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda ep: 0.5 ** (ep // 5))
+        if opt.optimizer == 'RMSprop':
+            self.optimizer = RMSprop(model.parameters(), lr=opt.lr_init, weight_decay=opt.weight_decay)
+        elif opt.optimizer == 'Adam':
+            self.optimizer = Adam(model.parameters(), lr=opt.lr_init, weight_decay=opt.weight_decay)
+        self.scheduler = LambdaLR(self.optimizer, lr_lambda=opt.lr_lambda)
 
     def init_summary_writer(self):
         opt = self.opt
@@ -133,7 +113,10 @@ class TrainHandler:
             self.writer = SummaryWriter(os.path.join(opt.tensorboard_dir, self.name()))
 
     def name(self):
-        return ','.join([self.loader.name(), self.model.name(), self.loss.__name__, f'lr_init={self.opt.lr_init}'])
+        substrs = [self.loader.name(), self.model.name(), self.loss.__name__, f'lr_init={self.opt.lr_init}', self.opt.optimizer]
+        if len(self.opt.name_suffix) > 0:
+            substrs.append(self.opt.name_suffix)
+        return ','.join(substrs)
 
     def __repr__(self):
         return pprint.pformat(self.opt.__dict__) + '\n' + \
@@ -312,8 +295,12 @@ class TrainHandler:
                     with tqdm(total=len(self.loader), **kwargs) as inner_pbar:
                         for mb_idx, (x, y, param, llr) in self.loader.generator():
                             # feed forward to compute cost
-                            outputs = self.model(llr)
-                            cost = self.loss(x, outputs)
+                            if not hasattr(self.model, 'adapter_nn'):
+                                outputs = self.model(llr)
+                            else:
+                                outputs = self.model((llr, param))
+                            discount = self.opt.discount_lambda(self.opt.discount_init, epoch)
+                            cost = self.loss(x, outputs, discount)
                             self.epoch_cost += float(cost)
                             # back propagation with gradient clipping
                             if trainable:
@@ -416,7 +403,8 @@ class TrainHandler:
                     model_result[chn_param] = default_value()
                 param_result = model_result[chn_param]
                 with tqdm(total=min_mb_num, leave=False) as pbar:
-                    for i in range(min_mb_num):
+                    pbar.update(param_result['mb_count'])
+                    for i in range(param_result['mb_count'], min_mb_num):
                         # update log on every 100 mini-batch
                         if i % 1 == 0 or param_result['word_error'][-1] >= min_word_error:
                             with open(test_result_file, 'wb') as f:
@@ -429,24 +417,27 @@ class TrainHandler:
                             pbar.update(i - pbar.n)
                             # if word error count already exceeds given threshold, break the loop
                             if param_result['word_error'][-1] >= min_word_error:
-                                pbar.update(min_mb_num - pbar.n)
                                 break
                         # test a new mini-batch
-                        if i >= param_result['mb_count']:
-                            x, y, param, llr = self.loader.next_batch([chn_param, chn_param], all_zero)
+                        x, y, param, llr = self.loader.next_batch([chn_param, chn_param], all_zero)
+                        if not hasattr(self.model, 'adapter_nn'):
                             outputs = self.model(llr)
-                            if isinstance(outputs[-1], list):
-                                outputs = [o for block in outputs for o in block]
-                            cum_loss_CE_curr = [cross_entropy(x, o).data.cpu() for o in outputs]
-                            cum_loss_tanh_curr = [tanh_loss(x, o).data.cpu() for o in outputs]
-                            bit_error_curr = [bit_error_rate(x, hard_decision(o)).data.cpu() for o in outputs]
-                            word_error_curr = [word_error_rate(x, hard_decision(o)).data.cpu() for o in outputs]
-                            param_result['cum_loss_tanh'] += np.array(cum_loss_tanh_curr)
-                            param_result['cum_loss_CE'] += np.array(cum_loss_CE_curr)
-                            param_result['bit_error'] += np.array(bit_error_curr) * self.loader.code.N * self.loader.batch_size
-                            param_result['word_error'] += np.array(word_error_curr) * self.loader.batch_size
-                            param_result['mb_count'] += 1
-                            del x, y, param, llr
+                        else:
+                            outputs = self.model((llr, param))
+                        if isinstance(outputs[-1], list):
+                            outputs = [o for block in outputs for o in block]
+                        cum_loss_CE_curr = [cross_entropy(x, o).data.cpu() for o in outputs]
+                        cum_loss_tanh_curr = [soft_BER(x, o).data.cpu() for o in outputs]
+                        bit_error_curr = [bit_error_rate(x, hard_decision(o)).data.cpu() for o in outputs]
+                        word_error_curr = [word_error_rate(x, hard_decision(o)).data.cpu() for o in outputs]
+                        param_result['cum_loss_tanh'] += np.array(cum_loss_tanh_curr)
+                        param_result['cum_loss_CE'] += np.array(cum_loss_CE_curr)
+                        param_result['bit_error'] += np.array(bit_error_curr) * self.loader.code.N * self.loader.batch_size
+                        param_result['word_error'] += np.array(word_error_curr) * self.loader.batch_size
+                        param_result['mb_count'] += 1
+                        del x, y, param, llr
+                    # Guarantee the progress bar goes to the end
+                    pbar.update(min_mb_num)
 
                 chn_pbar.update(1)
                 iter_plot(chn_param, param_result)
