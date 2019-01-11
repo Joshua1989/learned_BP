@@ -44,7 +44,8 @@ class AdaBP_Decoder_Opt:
     def __init__(self, **kwargs):
         self.llr_clip = kwargs.get('llr_clip', 15.0)
         self.T = kwargs.get('T', 30)
-        self.max_weight = kwargs.get('max_weight', 1.0)
+        self.damping = kwargs.get('damping', True)
+        self.max_weight = kwargs.get('max_weight', 10.0)
         self.est_SNR = kwargs.get('est_SNR', True)
         self.use_cuda = kwargs.get('use_cuda', True)
 
@@ -63,7 +64,10 @@ class AdaBP_Decoder(nn.Module):
 
     def name(self):
         opt = self.opt
-        return f'T={opt.T},mw={opt.max_weight},est_SNR,adaBP' if opt.est_SNR else f'T={opt.T},mw={opt.max_weight},adaBP'
+        ans = f'T={opt.T},mw={opt.max_weight},est_SNR,adaBP' if opt.est_SNR else f'T={opt.T},mw={opt.max_weight},adaBP'
+        if not self.opt.damping:
+            ans += ',no-damping'
+        return ans
 
     def iteration_number(self):
         return self.opt.T
@@ -111,15 +115,20 @@ class AdaBP_Decoder(nn.Module):
         ell, lam_hat = Wi * ell, We * lam_hat
         return ell + self.H.col_sum(lam_hat)
 
-    def forward(self, chn_llr):
+    def forward(self, inputs):
+        chn_llr, snr_param = inputs
         # chn_llr N x B, use adapter NN to generate BP parameters
         if self.opt.est_SNR:
-            E = (chn_llr ** 2).mean(dim=0)
-            snr_hat = 10 * ((E / (1 + (1 + E).sqrt())) / (4 * self.code.rate)).log10()
+            # E = (chn_llr ** 2).mean(dim=0)
+            # snr_hat = 10 * ((E / (1 + (1 + E).sqrt())) / (4 * self.code.rate)).log10()
+            snr_hat = snr_param
             params = self.adapter_nn(snr_hat.reshape((-1, 1))).t()
         else:
             params = self.adapter_nn(chn_llr.t()).t()
         gamma, Wi, We = [tensor.reshape((1, -1)) for tensor in params]
+        if not self.opt.damping:
+            gamma = 1
+
         Wi, We = self.opt.max_weight * Wi, self.opt.max_weight * We
         # Initialize BP messages
         shape = (self.code.H.E, chn_llr.shape[1])
