@@ -5,6 +5,7 @@ from collections import defaultdict
 import plotly.offline as off
 import plotly.graph_objs as go
 from ipywidgets import interact
+from pandas import DataFrame
 off.init_notebook_mode(connected=True)
 
 
@@ -26,7 +27,7 @@ def export_results(exp_name, batch_size=100):
                 for t, word_err in enumerate(vv['word_error'], 1):
                     result[k]['WER' + str(t).zfill(2)].append(word_err / sample_count)
                 result[k]['sample_count'].append(sample_count)
-    return {k: pd.DataFrame(v) for k, v in result.items()}
+    return {k: DataFrame(v) for k, v in result.items()}
 
 
 def filter_function(**d):
