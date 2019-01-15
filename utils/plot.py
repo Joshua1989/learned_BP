@@ -116,7 +116,7 @@ def generate_dropdown(keys):
     for items in zip(*[k.split('-') for k in keys]):
         if len(set(items)) == 1:
             continue
-        if 'BCH' in items[0] or 'RM' in items[0]:
+        if 'BCH_' in items[0] or 'RM_' in items[0]:
             dropdowns['code'] = ['all'] + list(set(items))
         if items[0] in ['CE', 'BER']:
             dropdowns['loss'] = ['all'] + list(set(items))
@@ -150,7 +150,8 @@ def create_plot(result, filter_func, rename_func, metric, filename='default'):
         showlegend=True,
         yaxis=dict(
             type='log',
-            autorange=True
+            autorange=True,
+            exponentformat='power'
         )
     )
 
@@ -174,7 +175,8 @@ def create_convergence_plot(result, filter_func, rename_func, SNR, metric='BER',
         showlegend=True,
         yaxis=dict(
             type='log',
-            autorange=True
+            autorange=True,
+            exponentformat='power'
         )
     )
 
