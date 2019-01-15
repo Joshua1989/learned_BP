@@ -18,6 +18,7 @@ def export_results(exp_name, batch_size=100):
         N = int(match.group(1))
         for k, v in sorted(pickle.load(open(file, 'rb')).items()):
             if k in result:
+                continue
                 print(f'model {k} already exists')
             for snr, vv in sorted(v.items()):
                 sample_count = vv['mb_count'] * B
@@ -31,19 +32,23 @@ def export_results(exp_name, batch_size=100):
 
 
 def filter_function(**d):
+    for k, v in d.items():
+        if isinstance(v, str):
+            d[k] = [v]
+
     def f(key):
-        if d.get('channel', '') not in key:
+        if 'channel' in d and all(x not in key for x in d['channel']):
             return False
-        if d.get('T', '') not in key:
+        if 'T' in d and all(x not in key for x in d['T']):
             return False
-        if d.get('mode', '') not in key:
+        if 'mode' in d and all(x.replace('rrd_', '') not in key or (('rrd' in key) ^ ('rrd' in x)) for x in d['mode']):
             return False
-        if d.get('loss', '') not in key:
+        if 'loss' in d and all(x not in key for x in d['loss']):
             return False
-        if d.get('optimizer', '') not in key:
+        if 'optimizer' in d and all(x not in key for x in d['optimizer']):
             return False
-        if 'code' in d:
-            return d['code'] + ',' in key
+        if 'code' in d and all(x + ',' not in key for x in d['code']):
+            return False
         if 'damping' in d:
             if not d['damping']:
                 return 'damping_fixed=0.9999' in key or 'no-damping' in key
@@ -66,7 +71,10 @@ def rename_function(show_code=False, show_loss=True, show_opt=True, show_tm=Fals
         if 'mode' not in key:
             segs.append('adaBP')
         else:
-            segs.append(re.search('mode=(\w+),', key).group(1))
+            mode = re.search('mode=(\w+),', key).group(1)
+            if 'rrd' in key:
+                mode = 'rrd_' + mode
+            segs.append(mode)
         if 'rrd' in key:
             if 'mixing_fixed=0.9999' not in key and 'no-mixing' not in key:
                 if 'mixing_fixed' in key:
@@ -114,11 +122,11 @@ def generate_dropdown(keys):
             dropdowns['loss'] = ['all'] + list(set(items))
         if items[0] in ['Adam', 'RMSprop']:
             dropdowns['optimizer'] = ['all'] + list(set(items))
-        if items[0] in ['adaBP', 'plain', 'simple', 'full']:
+        if items[0] in ['adaBP', 'plain', 'simple', 'full', 'rrd_adaBP', 'rrd_plain', 'rrd_simple', 'rrd_full']:
             dropdowns['mode'] = ['all'] + list(set(items))
-        if items[0] == 'mix':
+        if 'mix' in items[0]:
             dropdowns['mixing'] = ['all'] + list(set(items))
-        if items[0] == 'damp':
+        if 'damp' in items[0]:
             dropdowns['damping'] = ['all'] + list(set(items))
         if 'lr' in items[0]:
             dropdowns['learning_rate'] = ['all'] + list(set(items))
@@ -148,7 +156,31 @@ def create_plot(result, filter_func, rename_func, metric, filename='default'):
 
     def draw_plot(**kwargs):
         args = [x for x in kwargs.values() if x != 'all']
-        data = [d for d in all_data if all(x in d.name for x in args)]
+        data = [d for d in all_data if all(x in d.name.split('-') for x in args)]
+        fig = dict(data=data, layout=layout)
+        off.iplot(fig, filename=filename)
+    return interact(draw_plot, **dropdowns)
+
+
+def create_convergence_plot(result, filter_func, rename_func, SNR, metric='BER', filename='default'):
+    # filter and rename models
+    result = {rename_func(k): v[v.SNR == SNR][[col for col in v.columns if metric in col]].values[0]
+              for k, v in result.items() if filter_func(k)}
+    dropdowns = generate_dropdown(result.keys())
+    all_data = [go.Scatter(x=list(range(1, v.size + 1)), y=list(v), name=k)
+                for k, v in result.items()]
+    layout = dict(
+        title=f'{metric} under {SNR}dB',
+        showlegend=True,
+        yaxis=dict(
+            type='log',
+            autorange=True
+        )
+    )
+
+    def draw_plot(**kwargs):
+        args = [x for x in kwargs.values() if x != 'all']
+        data = [d for d in all_data if all(x in d.name.split('-') for x in args)]
         fig = dict(data=data, layout=layout)
         off.iplot(fig, filename=filename)
     return interact(draw_plot, **dropdowns)
