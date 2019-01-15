@@ -15,7 +15,7 @@ def export_results(exp_name, batch_size=100):
     pickle_files = glob.glob(f'{exp_name}/test_results/*.pickle')
     for file in pickle_files:
         match = re.search('_(\d+)_(\d+).pickle', file)
-        N, K = int(match.group(1)), int(match.group(2))
+        N = int(match.group(1))
         for k, v in sorted(pickle.load(open(file, 'rb')).items()):
             if k in result:
                 print(f'model {k} already exists')
@@ -66,18 +66,18 @@ def rename_function(show_code=False, show_loss=True, show_opt=True, show_tm=Fals
         if 'mode' not in key:
             segs.append('adaBP')
         else:
-            segs.append(re.search('mode=(\w+),', k).group(1))
+            segs.append(re.search('mode=(\w+),', key).group(1))
         if 'rrd' in key:
             if 'mixing_fixed=0.9999' not in key and 'no-mixing' not in key:
                 if 'mixing_fixed' in key:
-                    segs.append('mix' + re.search('mixing_fixed=([-+]?[0-9]*\.?[0-9]+)', k).group(1))
+                    segs.append('mix' + re.search('mixing_fixed=([-+]?[0-9]*\.?[0-9]+)', key).group(1))
                 else:
                     segs.append('mix')
             else:
                 segs.append('no_mix')
         if 'damping_fixed=0.9999' not in key and 'no-damping' not in key:
             if 'damping_fixed' in key:
-                segs.append('damp' + re.search('damping_fixed=([-+]?[0-9]*\.?[0-9]+)', k).group(1))
+                segs.append('damp' + re.search('damping_fixed=([-+]?[0-9]*\.?[0-9]+)', key).group(1))
             else:
                 segs.append('damp')
         else:
@@ -93,10 +93,10 @@ def rename_function(show_code=False, show_loss=True, show_opt=True, show_tm=Fals
             if 'RMSprop' in key:
                 segs.append('RMSprop')
         if show_tm:
-            if 'r_decay' in k:
-                segs.append('lr' + re.search('r_decay_factor=([-+]?[0-9]*\.?[0-9]+)', k).group(1))
-            if 'discount_decay' in k:
-                segs.append('disc' + re.search('discount_decay_factor=([-+]?[0-9]*\.?[0-9]+)', k).group(1))
+            if 'r_decay' in key:
+                segs.append('lr' + re.search('r_decay_factor=([-+]?[0-9]*\.?[0-9]+)', key).group(1))
+            if 'discount_decay' in key:
+                segs.append('disc' + re.search('discount_decay_factor=([-+]?[0-9]*\.?[0-9]+)', key).group(1))
         if show_channel:
             segs.append(key.split(',')[1])
         return '-'.join(segs)
