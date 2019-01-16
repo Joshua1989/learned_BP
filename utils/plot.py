@@ -17,9 +17,10 @@ def export_results(exp_name, batch_size=100):
         match = re.search('_(\d+)_(\d+).pickle', file)
         N = int(match.group(1))
         for k, v in sorted(pickle.load(open(file, 'rb')).items()):
-            if k in result:
-                continue
-                print(f'model {k} already exists')
+            result[k] = defaultdict(list)
+            # if k in result:
+            #     continue
+            #     print(f'model {k} already exists')
             for snr, vv in sorted(v.items()):
                 sample_count = vv['mb_count'] * B
                 result[k]['SNR'].append(snr)
@@ -138,6 +139,11 @@ def generate_dropdown(keys):
 
 
 def create_plot(result, filter_func, rename_func, metric, filename='default'):
+    tickvals, ticktext = [1], ['10^0']
+    for L in range(1, 9):
+        tickvals += reversed([k / 10**L for k in range(1, 10)])
+        ticktext += [''] * 9 + ['$10^{#}$'.replace('#', str(-L))]
+
     # filter and rename models
     result = {rename_func(k): v[['SNR', metric]]
               for k, v in result.items()
@@ -146,12 +152,18 @@ def create_plot(result, filter_func, rename_func, metric, filename='default'):
     all_data = [go.Scatter(x=list(v['SNR']), y=list(v[metric]), name=k)
                 for k, v in result.items()]
     layout = dict(
-        title=metric,
+        title=metric if filename == 'default' else filename,
         showlegend=True,
+        xaxis=dict(showline=True, title='Eb/No (dB)'),
         yaxis=dict(
+            showline=True,
+            title='metric',
             type='log',
             autorange=True,
-            exponentformat='power'
+            tickvals=tickvals,
+            ticktext=ticktext,
+            ticks='inside',
+            hoverformat='.4e',
         )
     )
 
@@ -164,6 +176,11 @@ def create_plot(result, filter_func, rename_func, metric, filename='default'):
 
 
 def create_convergence_plot(result, filter_func, rename_func, SNR, metric='BER', filename='default'):
+    tickvals, ticktext = [1], ['10^0']
+    for L in range(1, 9):
+        tickvals += reversed([k / 10**L for k in range(1, 10)])
+        ticktext += [''] * 9 + ['$10^{#}$'.replace('#', str(-L))]
+
     # filter and rename models
     result = {rename_func(k): v[v.SNR == SNR][[col for col in v.columns if metric in col]].values[0]
               for k, v in result.items() if filter_func(k)}
@@ -171,12 +188,18 @@ def create_convergence_plot(result, filter_func, rename_func, SNR, metric='BER',
     all_data = [go.Scatter(x=list(range(1, v.size + 1)), y=list(v), name=k)
                 for k, v in result.items()]
     layout = dict(
-        title=f'{metric} under {SNR}dB',
+        title=f'{metric} under {SNR}dB' if filename == 'default' else filename,
         showlegend=True,
+        xaxis=dict(showline=True, title='# BP Iteration'),
         yaxis=dict(
+            showline=True,
+            title='metric',
             type='log',
             autorange=True,
-            exponentformat='power'
+            tickvals=tickvals,
+            ticktext=ticktext,
+            ticks='inside',
+            hoverformat='.4e',
         )
     )
 
