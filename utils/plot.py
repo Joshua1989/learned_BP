@@ -9,7 +9,7 @@ from pandas import DataFrame
 off.init_notebook_mode(connected=True)
 
 
-def export_results(exp_name, batch_size=100):
+def export_results(exp_name, batch_size=100, overwrite=True):
     B = batch_size
     result = defaultdict(lambda: defaultdict(list))
     pickle_files = glob.glob(f'{exp_name}/test_results/*.pickle')
@@ -17,10 +17,11 @@ def export_results(exp_name, batch_size=100):
         match = re.search('_(\d+)_(\d+).pickle', file)
         N = int(match.group(1))
         for k, v in sorted(pickle.load(open(file, 'rb')).items()):
-            result[k] = defaultdict(list)
-            # if k in result:
-            #     continue
-            #     print(f'model {k} already exists')
+            if k in result:
+                if overwrite:
+                    result[k] = defaultdict(list)
+                else:
+                    continue
             for snr, vv in sorted(v.items()):
                 sample_count = vv['mb_count'] * B
                 result[k]['SNR'].append(snr)
