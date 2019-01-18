@@ -1,9 +1,6 @@
-from functools import reduce
-import itertools as it
 from learned_BP.common.parity_check_matrix import ParityCheckMatrix
-from learned_BP.pynite_field import vec2de, de2vec, GF
+from learned_BP.pynite_field import vec2de, de2vec
 import numpy as np
-import operator as op
 import os
 import scipy.io
 import torch
@@ -112,25 +109,16 @@ class LinearCode:
 class RM_Code(LinearCode):
     def __init__(self, n, k, mode='', use_cuda=True):
         mat = scipy.io.loadmat(os.path.join(os.path.split(__file__)[0], 'RM_matrices.mat'))
-        code_name, H_sfx = f'RM_{n}_{k}', 'oc' * (mode != '')
+        code_name, H_sfx = f'RM_{n}_{k}', mode if mode in ['oc', 'sq', 'cr'] else ''
         G, H = mat[f'{code_name}_G'], mat[f'{code_name}_H{H_sfx}']
-        if mode != '':
+        if mode == 'oc':
             H = H.toarray()
         super(RM_Code, self).__init__(code_name, G, H, use_cuda)
         self.suffix = mode
-        if mode == 'F2m':
-            self.H = self.partition_overcomplete_matrix(F2m_equiv=True)[1]
-            self.H_np = self.H.H.data.cpu()
-            del self.Hsub
-        if 'sample' in mode:
-            alpha = [float(mode[6:]) / self.H.M]
-            self.H = self.generate_random_subsample(alpha)[1]
-            self.H_np = self.H.H.data.cpu()
-            del self.Hsub
         print('Successfully created linear code', repr(self))
 
     def generate_automorphism(self, perm_num=10000):
-        def invertible_binary_matrix(m):
+        def rand_GL_2_m(m):
             while True:
                 A0, rank = np.random.randint(low=0, high=2, size=(m, m)), 0
                 A = A0.copy()
@@ -149,7 +137,7 @@ class RM_Code(LinearCode):
         self.inv_automorphisms = np.zeros((perm_num, self.N), dtype=int)
         for i in range(perm_num):
             # Randomly pick affine transformation of vector index of columns
-            D, b = invertible_binary_matrix(m), np.random.randint(low=0, high=2, size=(m, 1))
+            D, b = rand_GL_2_m(m), np.random.randint(low=0, high=2, size=(m, 1))
             # Find the column permutation induced by the affine transformation
             self.automorphisms[i, :] = vec2de(np.mod(D @ col_index + b, 2).astype(int).T)
             self.inv_automorphisms[i, :] = np.argsort(self.automorphisms[i, :])
@@ -159,104 +147,12 @@ class RM_Code(LinearCode):
             self.automorphisms = self.automorphisms.cuda()
             self.inv_automorphisms = self.inv_automorphisms.cuda()
 
-    def generate_random_subsample(self, alpha):
-        self.Hsub = {}
-        for t, a in enumerate(alpha, 1):
-            row_index = np.random.choice(self.H.M, round(a * self.H.M), replace=False)
-            self.Hsub[t] = ParityCheckMatrix(self.H_np[row_index])
-        return self.Hsub
-
-    def partition_overcomplete_matrix(self, n_part=None, F2m_equiv=False):
-        if self.suffix == '':
-            raise Exception('Only over-complete matrix can be partitioned')
-
-        if not F2m_equiv:
-            n_part = n_part or self.H.M // (self.N - 1)
-        if not F2m_equiv and self.H.M % n_part != 0:
-            raise Exception('Number of partition must divide row number of parity check matrix')
-
-        if not F2m_equiv:
-            self.Hsub, perm, size = {}, np.random.permutation(self.H.M), self.H.M // n_part
-            for t in range(1, n_part + 1):
-                row_index = perm[(t - 1) * size:t * size]
-                self.Hsub[t] = ParityCheckMatrix(self.H_np[row_index])
-        else:
-            def powerset(iterable):
-                s = list(iterable)
-                return it.chain.from_iterable(it.combinations(s, r) for r in range(len(s) + 1))
-
-            def codeword(V, b):
-                m, b = V.shape[0], b.reshape(-1)
-                vs = [reduce(lambda x, y: x + y, s, np.zeros(m)) for s in powerset(V.T)]
-                idx = [vec2de((v + b) % 2) for v in vs]
-                cw = np.zeros(2**m, dtype=int)
-                cw[idx] = 1
-                return cw
-
-            def Vb2index(V, b):
-                b = b.reshape(-1)
-                vs = [reduce(lambda x, y: x + y, s, np.zeros_like(b)) for s in powerset(V.T)]
-                return tuple(sorted(int(vec2de((v + b) % 2)) for v in vs))
-
-            def index2Vb(index, m):
-                r = int(np.log2(len(index))) - 1
-                b = de2vec(min(index, key=lambda x: (bin(x).count('1'), x)), n=m)
-                index = sorted(np.array(index) ^ index[0])
-                base, i = [index[1]], 2
-                while len(base) < r + 1 and i < len(index):
-                    if index[i] not in set(reduce(op.xor, s, 0) for s in powerset(base)):
-                        base.append(index[i])
-                    i += 1
-                V = de2vec(base, n=m).T
-                return V, b
-
-            self.Hsub, i, gf = {}, 1, GF(2, 5)
-            A = gf[gf.prim_elems[0].int].matrix_repr().astype(int)
-            C = set(tuple(np.where(row > 0)[0]) for row in self.H_np.astype(int))
-            while len(C) > 0:
-                C0, CWs, indices = set(), list(), C.pop()
-                V, b = index2Vb(indices, m=5)
-                while indices not in C0:
-                    C0.add(indices)
-                    CWs.append(codeword(V, b))
-                    V, b = A @ V % 2, A @ b.reshape((-1, 1)) % 2
-                    indices = Vb2index(V, b)
-                self.Hsub[i], i, C = ParityCheckMatrix(np.array(CWs, dtype=int)), i + 1, C - C0
-        return self.Hsub
-
 
 class BCH_Code(LinearCode):
-    def __init__(self, n, k, cyclic=False, extended=False, cycle_reduced=True, use_cuda=True):
+    def __init__(self, n, k, mode='', use_cuda=True):
         mat = scipy.io.loadmat(os.path.join(os.path.split(__file__)[0], 'BCH_matrices.mat'))
-        code_name, G_sfx, H_sfx = f'BCH_{n}_{k}', 'e' * extended, ('sq' * cyclic) + ('e' * extended)
-        G, H = mat[f'{code_name}_G{G_sfx}'], mat[f'{code_name}_H{H_sfx}']
-
-        base_url = 'https://www.uni-kl.de/fileadmin/chaco/public/alists_bch/'
-        cycle_reduced_url = {
-            (255, 239): base_url + 'Hopt_BCH_255_239_2_1792ones.alist',
-            (255, 207): base_url + 'Hopt_BCH_255_207_6_3920ones.alist',
-            (255, 163): base_url + 'Hopt_BCH_255_163_12_6152ones.alist',
-            (127, 99): base_url + 'Hopt_BCH_127_99_4_1232ones.alist',
-            (127, 92): base_url + 'Hopt_BCH_127_92_5_1148ones.alist',
-            (127, 85): base_url + 'Hopt_BCH_127_85_6_1344ones.alist',
-            (127, 78): base_url + 'Hopt_BCH_127_78_7_1372ones.alist',
-            (127, 71): base_url + 'Hopt_BCH_127_71_9_1292ones.alist',
-            (127, 64): base_url + 'Hopt_BCH_127_64_10_1424ones.alist',
-            (63, 30): base_url + 'Hopt_BCH_63_30_6_396ones.alist',
-            (63, 36): base_url + 'Hopt_BCH_63_36_5_384ones.alist',
-            (63, 39): base_url + 'Hopt_BCH_63_39_4_336ones.alist',
-            (63, 45): base_url + 'Hopt_BCH_63_45_3_288ones.alist',
-            (63, 51): base_url + 'Hopt_BCH_63_51_2_288ones.alist',
-            (63, 57): base_url + 'Hopt_BCH_63_57_1_192ones.alist'
-        }
-        if cycle_reduced and (n, k) in cycle_reduced_url:
-            import urllib.request
-            H, H_sfx = np.zeros((n - k, n), dtype=int), 'cr'
-            s = urllib.request.urlopen(cycle_reduced_url[(n, k)]).read().decode('utf8')
-            for r, row in enumerate(s.split('\n')[-(n - k) - 1:-1]):
-                H[r, [n - int(x) for x in row.split() if x != '0']] = 1
-        elif cycle_reduced:
-            print('cycle_reduced matrix not available, use default one')
+        code_name, H_sfx = f'BCH_{n}_{k}', mode if mode in ['sq', 'cr'] else ''
+        G, H = mat[f'{code_name}_G'], mat[f'{code_name}_H{H_sfx}']
         super(BCH_Code, self).__init__(code_name, G, H, use_cuda)
         self.suffix = H_sfx
         print('Successfully created linear code', repr(self))
@@ -331,25 +227,3 @@ class EGolay24_Code(LinearCode):
         if self.use_cuda:
             self.automorphisms = self.automorphisms.cuda()
             self.inv_automorphisms = self.inv_automorphisms.cuda()
-
-
-# class Product_Code:
-#     def __init__(self, code1, code2):
-#         self.code1, self.code2 = code1, code2
-#         self.name = self.code1.name + '-' + self.code2.name
-
-#     def full_name(self):
-#         return self.code1.full_name() + '-' + self.code2.full_name()
-
-#     def generate_codeword(self, batch_size, all_zero):
-#         if not self.G_unknown and not all_zero:
-#             # If G is known and not transmit all-zero codewords
-#             m = tf.to_float(tf.random_uniform((batch_size, self.code1.K, self.code2.K)) < 0.5)
-#             x = tf.mod(tf.matmul(self.code1.G, m), 2)
-#         else:
-#             x = tf.constant(np.zeros((batch_size, self.code1.N, self.code2.N)), dtype=tf.float32)
-#         return x
-
-#     def generate_automorphism(self, perm_num=10000):
-#         self.automorphisms = np.arange(self.N, dtype=int).reshape((1, -1))
-#         print('Automorphism sampling not implemented for {0}, use trivial identity permutation'.format(self.name))
